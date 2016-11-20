@@ -3,6 +3,7 @@ import requests
 from tornado.wsgi import WSGIContainer
 from tornado.httpserver import HTTPServer
 from tornado.ioloop import IOLoop
+from whatever import parse
 import os
 
 app = Flask(__name__)
@@ -12,7 +13,9 @@ app = Flask(__name__)
 def wordDate():
     if request.method == 'POST':
         print(request.json.get("words"))
-        return jsonify(emotionalState='good')
+        result = parse(request.json.get("words").lower())
+        print(result)
+        return jsonify(emotionalState=result)
 
 
 
