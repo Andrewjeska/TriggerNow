@@ -14,13 +14,16 @@ import {
   Text,
   View,
   Navigator,
+  TouchableHighlight,
   ART
 } from 'react-native';
 
 //import MapView from 'react-native-maps';
 
 import Button from 'react-native-button';
-const MapView = require('react-native-maps');
+import Voice from 'react-native-voice';
+import { worker } from 'react-native-workers';
+
 
 
 export default class Landing extends Component {
@@ -34,29 +37,55 @@ export default class Landing extends Component {
         </Text>
       </View> */
 
+      const routes = [
+       {title: 'Main', index: 0},
+       {title: 'Data', index: 1},
+     ];
+
     return (
         <Navigator
-          initialRoute={{ title: 'Main', index: 0 }}
+          initialRoute={routes[0]}
+          initialRouteStack={routes}
           renderScene={(route, navigator) => {
-            return <Main
-
-                onForward={ () => {
-                 const nextIndex = route.index + 1;
-                 navigator.push({
-                   title: 'Scene ' + nextIndex,
-                   index: nextIndex,
-                 });
-               }}
-
-               // Function to call to go back to the previous scene
-               onBack={() => {
-                 if (route.index > 0) {
-                   navigator.pop();
-                 }
-               }}
-
-            ></Main>
+              return <Scene index={route.index} />
           }}
+
+          navigationBar={
+             <Navigator.NavigationBar
+               routeMapper={{
+                 LeftButton: (route, navigator, index, navState) =>
+                 {
+                  if (route.index === 0) {
+                    return null;
+                  } else {
+                    return (
+                      <TouchableHighlight onPress={() => navigator.pop()}>
+                        <Text>Back</Text>
+                      </TouchableHighlight>
+                    );
+                  }
+                },
+                 RightButton: (route, navigator, index, navState) =>
+                {
+                  if (route.index === 0) {
+                    return (
+                      <TouchableHighlight onPress={() => {
+                          navigator.push(routes[1]);
+                      }}>
+                        <Text>Data Visualization</Text>
+                      </TouchableHighlight>
+                    );
+
+                  } else {
+                    return null
+                }
+                },
+                 Title: (route, navigator, index, navState) =>
+                   { return (<Text>TriggerNow</Text>); },
+               }}
+               style={{backgroundColor: 'gray'}}
+             />
+          }
         />
 
 
@@ -65,52 +94,220 @@ export default class Landing extends Component {
   }
 }
 
+class Scene extends Component {
+    render(){
+        if(this.props.index === 0){
+            return(<Main/>)
+        } else {
+            return(<Data/>)
+        }
+    }
+}
+
 class Main extends Component {
+    constructor(props) {
+       super(props);
+       this.state = {
+         recognized: '',
+         pitch: '',
+         error: '',
+         end: '',
+         started: '',
+         results: [],
+         partialResults: [],
+         interval:'',
+         emotionalState:''
+       };
+       Voice.onSpeechStart = this.onSpeechStart.bind(this);
+       Voice.onSpeechRecognized = this.onSpeechRecognized.bind(this);
+       Voice.onSpeechEnd = this.onSpeechEnd.bind(this);
+       Voice.onSpeechError = this.onSpeechError.bind(this);
+       Voice.onSpeechResults = this.onSpeechResults.bind(this);
+       //Voice.onSpeechPartialResults = this.onSpeechPartialResults.bind(this);
+       Voice.onSpeechVolumeChanged = this.onSpeechVolumeChanged.bind(this);
+       this._startDataCollection = this._startDataCollection.bind(this);
+       this._stopDataCollection = this._stopDataCollection.bind(this);
+     }
+
+  onSpeechStart(e) {
+    this.setState({
+      started: true,
+    });
+  }
+  onSpeechRecognized(e) {
+    this.setState({
+      recognized: true,
+    });
+  }
+  onSpeechEnd(e) {
+    this.setState({
+      end:true,
+    });
+  }
+  onSpeechError(e) {
+    this.setState({
+      error: e.error,
+    });
+  }
+
+  onSpeechResults(e) {
+    this.setState({
+      results: e.value,
+    }, () => {
+      fetch('https://trigger-now.herokuapp.com/api/words', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          words: this.state.results[0]
+
+        })
+      })
+      .then((response) => response.json())
+      .then((responseJson) => {
+        //return responseJson.movies;
+        this.setState({emotionalState: responseJson.emotionalState})
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+   })
+  }
+
+  onSpeechVolumeChanged(e) {
+    this.setState({
+      pitch: e.value,
+    });
+  }
+
+  _startRecognizing(e) {
+    this.setState({
+      recognized: '',
+      pitch: '',
+      error: '',
+      started: '',
+      results: [],
+      partialResults: [],
+    });
+    const error = Voice.start('en');
+    if (error) {
+      ToastAndroid.show(error, ToastAndroid.SHORT);
+    }
+  }
+  _stopRecognizing(e) {
+    const error = Voice.stop();
+    if (error) {
+      ToastAndroid.show(error, ToastAndroid.SHORT);
+    }
+  }
+
+
     static get defaultProps() {
         return {
           title: 'Main'
         };
       }
 
-    connectToPebble(){
-        //launch some kind of bluetooth thing
-    }
+     _startDataCollection(e){
+         //const worker = new Worker("./workers/listener.js");
+         //worker.postMessage("hello from application");
 
-    startDataCollection(){
-        //start some background process
-    }
+        this._startRecognizing(e);
+
+        var interval = setInterval((e) => {
+                //if(this.state.end === true)
+                 this._startRecognizing(e);
+
+         }, 10000)
+
+         this.setState({
+           interval: interval
+         });
+     }
+
+     _stopDataCollection(){
+         clearInterval(this.state.interval)
+
+         this.setState({
+           interval: ''
+         });
+
+        // this._stopRecognizing(null);
+     }
+
 
     render() {
+
+
+    return (
+      <View style={styles.container}>
+        <Text style={styles.welcome}>
+          Welcome to React Native Voice!
+        </Text>
+        <Text style={styles.instructions}>
+          Press the button and start speaking when you hear the beep.
+        </Text>
+        <Text
+          style={styles.stat}>
+          {`Started: ${this.state.started}`}
+        </Text>
+        <Text
+          style={styles.stat}>
+          {`Recognized: ${this.state.recognized}`}
+        </Text>
+        <Text
+          style={styles.stat}>
+          {`Pitch: ${this.state.pitch}`}
+        </Text>
+        <Text
+          style={styles.stat}>
+          {`Error: ${this.state.error}`}
+        </Text>
+        <Text
+          style={styles.stat}>
+          Results
+        </Text>
+        {this.state.results.map((result, index) => {
+          return (
+            <Text
+              key={`result-${index}`}
+              style={styles.stat}>
+              {result}
+            </Text>
+          )
+        })}
+        <Text
+          style={styles.stat}>
+          {`End: ${this.state.end}`}
+        </Text>
+        <TouchableHighlight onPress={this._startDataCollection.bind(this)}>
+         <Text> Start </Text>
+        </TouchableHighlight>
+        <TouchableHighlight onPress={this._stopDataCollection}>
+          <Text
+            style={styles.action}>
+            Stop Recognizing
+          </Text>
+        </TouchableHighlight>
+
+
+      </View>
+
+
+        );
+    }
+}
+
+class Data extends Component {
+    render(){
 
         return(
             <View style={styles.container}>
 
-                <Text style={styles.welcome}> TriggerNow </Text>
-                <Text style={{textAlign: 'left'}}> Pebble Status:  </Text>
-
-                <Button
-                    style={{fontSize: 20, color: 'green'}}
-                    styleDisabled={{color: 'red'}}
-                    onPress={() => this.connectToPebble()}>
-                    Connect to Pebble
-                </Button>
-
-
-                <Button
-                    style={{fontSize: 40, color: 'black'}}
-                    styleDisabled={{color: 'red'}}
-                    onPress={() => this.startDataCollection()}>
-                    Start
-                </Button>
-
-                <Button
-                    style={{fontSize: 20, color: 'blue'}}
-                    styleDisabled={{color: 'red'}}
-                    onPress={() => this.props.onForward}>
-                    Data Visualization
-                </Button>
-
             </View>
+
         );
     }
 }
